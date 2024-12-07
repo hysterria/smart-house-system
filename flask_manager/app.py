@@ -5,36 +5,32 @@ import unidecode
 import os
 import shutil
 import logging
+import ray
 
-
+# Настройка логирования
 logging.basicConfig(level=logging.DEBUG)
+
+# Инициализация Flask приложения и клиента Docker
 app = Flask(__name__)
 client = docker.from_env()
 
+# Инициализация Ray
+ray.init(ignore_reinit_error=True)
+
+
+# Функция для очистки имени
 def sanitize_name(name):
     sanitized = unidecode.unidecode(name)
     sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', sanitized)
     return sanitized.lower()
 
-def select_template(device_type, device_name):
-    templates = {
-        "on_off_devices": "templates/lighting_template.py",
-        "on_off_temp_devices": "templates/heating_template.py",
-        "humidifier": "templates/humidifier_template.py"
-    }
-    if device_type in ['освещение', 'безопасность', 'бытовая техника']:
-        return templates['on_off_devices']
-    elif device_type == "отопление" and device_name.startswith("увлажнитель"):
-        return templates['humidifier']
-    elif device_type == "отопление":
-        return templates['on_off_temp_devices']
-    return 'not found'
-@app.route('/create_image', methods=['POST'])
-def create_image():
-    logging.info("Received request to create an image")
+
+# Эндпоинт для регистрации устройства
+@app.route('/register_device', methods=['POST'])
+def register_device():
     data = request.json
     device_name = data.get('device_name')
-    device_type = data.get('device_group')
+    device_type = data.get('device_type')
     room_name = data.get('room_name')
 
     if not device_name or not room_name:
@@ -51,14 +47,7 @@ def create_image():
     try:
         os.makedirs(build_dir, exist_ok=True)
 
-        template_path = select_template(device_type, device_name)
-        if template_path == 'not found' or not os.path.exists(template_path):
-            logging.error(f"Template for device type '{device_name}{device_type}' not found")
-            return jsonify({"error": f"Template for device type '{device_name}{device_type}' not found"}), 400
-
-        shutil.copy(template_path, os.path.join(build_dir, 'device_simulator.py'))
-        logging.debug(f"Template {template_path} copied to {build_dir}")
-
+        # Создание Dockerfile для устройства
         dockerfile_content = f"""
         FROM python:3.9-slim
         COPY . /app
@@ -71,11 +60,36 @@ def create_image():
             dockerfile.write(dockerfile_content)
         logging.debug(f"Dockerfile created at {dockerfile_path}")
 
+        # Создание скрипта симулятора устройства
+        device_simulator = f"""
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/status', methods=['GET'])
+def status():
+    return jsonify({{
+        "device_name": "{device_name}",
+        "device_type": "{device_type}",
+        "room_name": "{room_name}",
+        "status": "active"
+    }})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+        """
+        simulator_path = os.path.join(build_dir, 'device_simulator.py')
+        with open(simulator_path, 'w') as simulator_file:
+            simulator_file.write(device_simulator)
+        logging.debug(f"Device simulator script created at {simulator_path}")
+
+        # Сборка образа
         logging.info(f"Building Docker image: {container_name}")
         image, build_logs = client.images.build(path=build_dir, tag=f"{container_name}:latest")
         for log in build_logs:
             logging.debug(log)
 
+        # Проверка наличия сети
         network_name = "smarthousesystem_app-network"
         networks = [n.name for n in client.networks.list()]
         logging.debug(f"Available networks: {networks}")
@@ -83,6 +97,7 @@ def create_image():
             logging.error(f"Network {network_name} does not exist")
             raise ValueError(f"Network {network_name} does not exist")
 
+        # Создание контейнера
         logging.info(f"Creating container: {container_name}")
         container = client.containers.create(
             image=container_name,
@@ -107,6 +122,7 @@ def create_image():
             logging.debug(f"Temporary build directory {build_dir} removed")
 
 
+# Эндпоинт для управления устройством (стартап/стоп)
 @app.route('/toggle_device', methods=['POST'])
 def toggle_device():
     data = request.json
@@ -126,15 +142,15 @@ def toggle_device():
         if action == "start":
             if container.status != "running":
                 container.start()
-                return jsonify({'message': f'Device {device_name} started successfully' , 'success':'true'}), 200
+                return jsonify({'message': f'Device {device_name} started successfully', 'success': 'true'}), 200
             else:
-                return jsonify({'error': f'Device {device_name} is already running', 'success':'false'}), 400
+                return jsonify({'error': f'Device {device_name} is already running', 'success': 'false'}), 400
         elif action == "stop":
             if container.status == "running":
                 container.stop()
-                return jsonify({'message': f'Device {device_name} stopped successfully', 'success':'true'}), 200
+                return jsonify({'message': f'Device {device_name} stopped successfully', 'success': 'true'}), 200
             else:
-                return jsonify({'error': f'Device {device_name} is not running', 'success':'false'}), 400
+                return jsonify({'error': f'Device {device_name} is not running', 'success': 'false'}), 400
     except docker.errors.NotFound:
         app.logger.error(f"Container not found: {sanitized_name}")
         return jsonify({'error': f'Container for {device_name} not found'}), 404
@@ -143,6 +159,7 @@ def toggle_device():
         return jsonify({'error': str(e)}), 500
 
 
+# Эндпоинт для получения статуса устройства
 @app.route('/device_status', methods=['GET'])
 def device_status():
     device_name = request.args.get('device_name')
@@ -167,72 +184,31 @@ def device_status():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/toggle_scenario', methods=['POST'])
-def toggle_scenario():
+
+# Эндпоинт для взаимодействия с Ray (если нужно)
+@app.route('/create_ray_actor', methods=['POST'])
+def create_ray_actor():
     data = request.json
-    scenario_name = data.get("scenario_name")
-    devices = data.get("devices")
-    action = data.get("action")
+    device_name = data.get('device_name')
+    device_type = data.get('device_type')
 
-    if not scenario_name or not devices or action not in ["activate", "deactivate"]:
-        return jsonify({"success": False, "message": "Invalid parameters"}), 400
+    if not device_name or not device_type:
+        return jsonify({'error': 'Device name and type are required'}), 400
 
-    results = []
-    for device in devices:
-        try:
-            room_name, device_name = device.split(": ")
-            sanitized_name = f"device_{sanitize_name(room_name)}_{sanitize_name(device_name)}"
+    # Создаем Ray-актора для устройства
+    @ray.remote
+    class DeviceActor:
+        def __init__(self, device_name, device_type):
+            self.device_name = device_name
+            self.device_type = device_type
 
-            container = client.containers.get(sanitized_name)
+        def get_device_status(self):
+            return {"device_name": self.device_name, "device_type": self.device_type, "status": "active"}
 
-            if action == "activate":
-                if container.status != "running":
-                    container.start()
-                    results.append({
-                        "device": device,
-                        "success": True,
-                        "message": "Device started successfully"
-                    })
-                else:
-                    results.append({
-                        "device": device,
-                        "success": False,
-                        "message": "Device is already running"
-                    })
-            elif action == "deactivate":
-                if container.status == "running":
-                    container.stop()
-                    results.append({
-                        "device": device,
-                        "success": True,
-                        "message": "Device stopped successfully"
-                    })
-                else:
-                    results.append({
-                        "device": device,
-                        "success": False,
-                        "message": "Device is not running"
-                    })
+    device_actor = DeviceActor.remote(device_name, device_type)
+    device_status = ray.get(device_actor.get_device_status.remote())
 
-        except docker.errors.NotFound:
-            results.append({
-                "device": device,
-                "success": False,
-                "message": "Container not found"
-            })
-        except Exception as e:
-            results.append({
-                "device": device,
-                "success": False,
-                "message": f"Error: {str(e)}"
-            })
-
-    all_success = all(r["success"] for r in results)
-    return jsonify({
-        "success": all_success,
-        "message": f"Scenario {action}d {'successfully' if all_success else 'with some errors'}",
-        "details": results
-    })
+    return jsonify({"device_status": device_status}), 200
 
 
 if __name__ == '__main__':

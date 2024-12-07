@@ -22,7 +22,6 @@ public:
 
 signals:
     void backToMain();
-    void devicesLoaded(const QVector<QString> &devices);
 
 private slots:
     void onNoticeButtonClicked();
@@ -32,7 +31,7 @@ private slots:
     void onScenarioButtonClicked();
     void onAddScenarioButtonClicked();
     void requestRoomDevices(const QString &roomName);
-    void handleLoadAllDevicesForScenarios(const QJsonObject &response);
+
     void handleServerResponse(const QJsonObject &response);
     void handleLoadRoomsResponse(const QJsonObject &response);
     void handleLoadAllDevicesResponse(const QJsonObject &response);
@@ -41,6 +40,7 @@ private slots:
     void handleLoadScenariosResponse(const QJsonObject &response);
     void handleAddScenarioResponse(const QJsonObject &response);
     void handleLoadRoomDevicesResponse(const QJsonObject &response);
+
     void handleToggleDeviceResponse(const QJsonObject &response);
 
 
@@ -69,7 +69,6 @@ private:
     void initUI();
     void configureUIBasedOnRole();
     void displayItemsInGrid(const QVector<QString> &items, const QString roomName, bool isDevices);
-    void displayScenariosInGrid(QVector<QString> &scenarios);
     void displayAllDevicesInGrid(const QVector<QString> &items);
     void clearGridLayout(QLayout *layout);
     void clearDisplay();

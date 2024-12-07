@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-
   database:
     image: postgres:15
     environment:
@@ -30,7 +29,6 @@ services:
       - app-network
     depends_on:
       - database
- 
 
   flask_manager:
     build: ./flask_manager
@@ -40,7 +38,18 @@ services:
       - app-network
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    
+    depends_on:
+      - database
+
+  ray:
+    image: rayproject/ray:latest
+    ports:
+      - "6379:6379"  # для Redis
+      - "8265:8265"  # для Ray Dashboard
+    environment:
+      - RAY_HEAD=true
+    networks:
+      - app-network
 
 volumes:
   db_data:
@@ -49,8 +58,7 @@ volumes:
       type: none
       device: "./test_db"
       o: bind
-  
+
 networks:
   app-network:
     driver: bridge
-

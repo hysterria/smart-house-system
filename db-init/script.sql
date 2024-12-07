@@ -47,7 +47,16 @@ CREATE TABLE IF NOT EXISTS sensor_events (
 
 CREATE TABLE IF NOT EXISTS scenarios (
     id SERIAL PRIMARY KEY,
-    name TEXT UNIQUE NOT NULL,       
-    devices JSON NOT NULL,
-    is_active BOOLEAN DEFAULT FALSE           
+    name TEXT UNIQUE,
+    trigger_event TEXT
+);
+
+CREATE TABLE IF NOT EXISTS scenario_actions (
+    id SERIAL PRIMARY KEY,
+    scenario_id INTEGER,
+    device_id INTEGER,
+    action TEXT,
+    parameters TEXT, -- JSON
+    FOREIGN KEY (scenario_id) REFERENCES scenarios(id) ON DELETE CASCADE,
+    FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE CASCADE
 );

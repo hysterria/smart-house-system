@@ -1,5 +1,7 @@
 #include "networkmanager.h"
 #include <QMessageBox>
+#include <QJsonDocument>
+#include <QDebug>
 
 NetworkManager::NetworkManager(QObject *parent)
     : QObject(parent), socket(new QTcpSocket(this))
@@ -7,8 +9,8 @@ NetworkManager::NetworkManager(QObject *parent)
     connect(socket, &QTcpSocket::connected, this, &NetworkManager::onConnected);
     connect(socket, &QTcpSocket::readyRead, this, &NetworkManager::onReadyRead);
 
-    connect(socket, SIGNAL(error(QAbstractSocket::SocketError)),
-            this, SLOT(onSocketError(QAbstractSocket::SocketError)));
+    // Исправлено подключение сигнала ошибки
+    connect(socket, &QTcpSocket::errorOccurred, this, &NetworkManager::onSocketError);
 }
 
 bool NetworkManager::connectToServer(const QString &host, quint16 port) {
@@ -34,13 +36,10 @@ void NetworkManager::onConnected() {
 void NetworkManager::onReadyRead() {
     QByteArray data = socket->readAll();
     QJsonDocument doc = QJsonDocument::fromJson(data);
-    qDebug() << "-----IBUSKO----- onReadyRead if (doc.isObject() " << doc.object();
     if (doc.isObject()) {
-        qDebug() << "-----IBUSKO----- onReadyRead doc.object() " << doc.object();
         emit responseReceived(doc.object());
     }
 }
-
 
 void NetworkManager::onSocketError(QAbstractSocket::SocketError socketError) {
     if (socketError == QAbstractSocket::RemoteHostClosedError) {
@@ -49,4 +48,5 @@ void NetworkManager::onSocketError(QAbstractSocket::SocketError socketError) {
         qDebug() << "Socket error:" << socket->errorString();
     }
 }
+
 

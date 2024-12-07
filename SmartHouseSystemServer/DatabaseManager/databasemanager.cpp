@@ -7,7 +7,6 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QProcessEnvironment>
-#include <QJsonArray>
 
 DatabaseManager::DatabaseManager() {
 
@@ -121,7 +120,7 @@ bool DatabaseManager::addRoom(const QString &roomName) {
     return true;
 }
 
-bool DatabaseManager::addDevice(const QString &roomName, const QString &deviceType, QString &generatedDeviceName, QString &deviceGroup, QJsonObject &parameters) {
+bool DatabaseManager::addDevice(const QString &roomName, const QString &deviceType, QString &generatedDeviceName) {
     QSqlQuery query;
 
     query.prepare("SELECT id FROM rooms WHERE name = :name");
@@ -132,7 +131,30 @@ bool DatabaseManager::addDevice(const QString &roomName, const QString &deviceTy
     }
     int roomId = query.value(0).toInt();
 
+    QJsonObject parameters;
+    QString deviceGroup;
 
+    if (deviceType == "лампа"||deviceType == "шторы") {
+        deviceGroup = "освещение";
+        parameters["on"] = false;
+    } else if (deviceType == "кондиционер"||(deviceType == "обогреватель")||(deviceType == "тёплый пол")) {
+        deviceGroup = "отопление";
+        parameters["temperature"] = 22;
+        parameters["on"] = false;
+    }  else if (deviceType == "увлажнитель") {
+        deviceGroup = "отопление";
+        parameters["humidity"] = 50;
+        parameters["on"] = false;
+    } else if (deviceType == "кофемашина"||deviceType == "стиральная машина"||deviceType == "робот-пылесос"||deviceType == "колонка") {
+        deviceGroup = "бытовая техника";
+        parameters["on"] = false;
+    } else if (deviceType == "замок"||deviceType == "сигнализация") {
+        deviceGroup = "безопасность";
+        parameters["on"] = false;
+    } else {
+        qDebug() << "Unknown device type: " << deviceType;
+        return false;
+    }
 
     query.prepare("SELECT id FROM device_types WHERE type = :device_type");
     query.bindValue(":device_type", deviceType);
@@ -271,44 +293,18 @@ QStringList DatabaseManager::getAllScenarios() {
 
     return scenarios;
 }
-bool DatabaseManager::addScenario(const QString &name, const QJsonArray &devices) {
-    QSqlQuery query(db);
-    QString devicesJson = QString::fromUtf8(QJsonDocument(devices).toJson(QJsonDocument::Compact));
-    query.prepare("INSERT INTO scenarios (name, devices) VALUES (:name, :devices)");
-    query.bindValue(":name", name);
-    query.bindValue(":devices", devicesJson);
+
+bool DatabaseManager::addScenario(const QString &scenario) {
+    QSqlQuery query;
+    query.prepare("INSERT INTO scenarios (name) VALUES (:name)");
+    query.bindValue(":name", scenario);
 
     if (!query.exec()) {
-        qDebug() << "Failed to insert scenario:" << query.lastError();
+        qDebug() << "Failed to add scenario: " << query.lastError().text();
         return false;
     }
     return true;
 }
-
-QJsonArray DatabaseManager::getDevicesByScenario(const QString &scenarioName) {
-    QSqlDatabase db = QSqlDatabase::database();
-    QSqlQuery query(db);
-    query.prepare("SELECT devices FROM scenarios WHERE name = :scenarioName");
-    query.bindValue(":scenarioName", scenarioName);
-
-    if (!query.exec()) {
-        qDebug() << "Failed to fetch devices for scenario:" << query.lastError();
-        return QJsonArray(); // Возвращаем пустой массив, если запрос не удался
-    }
-
-    if (query.next()) {
-        QString devicesJson = query.value(0).toString();
-        QJsonDocument doc = QJsonDocument::fromJson(devicesJson.toUtf8());
-        if (!doc.isNull() && doc.isArray()) {
-            return doc.array(); // Возвращаем массив устройств
-        } else {
-            qDebug() << "Failed to parse devices JSON:" << devicesJson;
-        }
-    }
-
-    return QJsonArray(); // Возвращаем пустой массив, если сценарий не найден
-}
-
 
 QMap<QString, QStringList> DatabaseManager::getDevicesGroupedByType() {
     QMap<QString, QStringList> groupedDevices;
