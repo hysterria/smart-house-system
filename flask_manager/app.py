@@ -117,7 +117,6 @@ def select_template(device_type, device_name):
     return 'not found'
 
 
-@ray.remote
 def create_or_start_room_sensor(room_name, sensor_type):
     sanitized_room_name = sanitize_name(room_name)
     container_name = f"sensor_{sanitized_room_name}_{sensor_type}"
@@ -157,7 +156,7 @@ def create_or_start_room_sensor(room_name, sensor_type):
             dockerfile.write(dockerfile_content)
 
         image, _ = client.images.build(path=build_dir, tag=f"{container_name}:latest")
-        network_name = "smart-house-system_app-network"
+        network_name = "smarthousesystem_app-network"
         container = client.containers.create(
             image=container_name,
             name=container_name,
