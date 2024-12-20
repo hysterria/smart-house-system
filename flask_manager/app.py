@@ -55,7 +55,7 @@ def process_rule(rule, sensor_data):
 
         # Проверка условия и выполнение действия
         if evaluate_condition(current_value, operator, target_value):
-            execute_action(action)
+            execute_action.remote(action)
             return True
     return False
 
@@ -460,7 +460,7 @@ def get_sensor_values():
                     sensor_values["device_sensors"][device_container.name] = {"error": f"Status code {response.status_code}"}
             except Exception as e:
                 sensor_values["device_sensors"][device_container.name] = {"error": str(e)}
-    apply_automation_rules(sensor_values)
+    apply_automation_rules.remote(sensor_values)
     return jsonify(sensor_values)
 
 
